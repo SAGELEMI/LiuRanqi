@@ -1,18 +1,13 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
+
 #include <iostream>
-#include "CEF调用.h"
 
 const int kuandu = 800;
 const int gaodu = 600;
 
 int main(int argc, char* argv[]) {
-	void* sandbox_info = nullptr;
-#if defined(CEF_USE_SANDBOX)
-	CefScopedSandboxInfo scoped_sandbox;
-	sandbox_info = scoped_sandbox.sandbox_info();
-#endif
-	return CEFjihe::运行(argc, argv, sandbox_info);
+
 	//初始化SDL
 	if (!SDL_Init(SDL_INIT_VIDEO)) {
 		std::cerr << "无法初始化SDL: " << SDL_GetError() << std::endl;
@@ -44,6 +39,7 @@ int main(int argc, char* argv[]) {
 		SDL_Quit();
 		return -1;
 	}
+
 	//设置 OpenGL 视口（匹配窗口尺寸）
 	glViewport(0, 0, kuandu, gaodu);
 	//主循环

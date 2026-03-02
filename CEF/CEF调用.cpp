@@ -12,6 +12,7 @@ void CEFjihe::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
 	// 将新创建的浏览器添加到列表中
 	browser_list_.push_back(browser);
 	std::cout << "浏览器创建成功，ID: " << browser->GetIdentifier()<< std::endl;
+	CEFjihe::IsRun = true;
 }
 
 void CEFjihe::CloseAllBrowsers(bool force_close) {
@@ -55,6 +56,7 @@ void CEFjihe::OnBeforeClose(CefRefPtr<CefBrowser> browser)
 	if (after == 0) {
 		std::cout << "所有浏览器窗口已关闭，退出消息循环" << std::endl;
 		CefQuitMessageLoop();
+		CEFjihe::IsRun = false;
 	}                                                             
 }
 int CEFjihe::运行(int argc, char* argv[], void* sandbox_info) {

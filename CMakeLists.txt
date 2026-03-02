@@ -1,133 +1,57 @@
-# 3.20 CMake版本
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.20)
 
-# 项目名称
-project(LiuRanqi
-    VERSION 0.0.1
-    LANGUAGES CXX
-)
+project(LiuRanqi VERSION 0.0.1 LANGUAGES C CXX)
 
-#设置C++标准
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 使用UTF-8编码 + 启用C++异常处理 + 关闭max宏警告
+# 仅支持 x64 + Release。
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(FATAL_ERROR "只支持 x64 构建")
+endif()
+if(CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_CONFIGURATION_TYPES "Release" CACHE STRING "" FORCE)
+endif()
+set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+
 if(MSVC)
     add_compile_options(
-        "/utf-8"          # 原有编码配置
-        /EHsc             # 启用C++异常处理，解决C4530警告
-        /wd4003           # 关闭max宏参数不足的警告
-        /DNDEBUG
-    )
+            /utf-8 
+            /EHsc 
+            /wd4003
+        )
+    add_compile_definitions(NOMINMAX)
 endif()
 
-# 定义NOMINMAX宏，禁用Windows的max/min宏，解决和std::max的冲突
-add_compile_definitions(NOMINMAX)
+# 所有目标输出到根目录“生成”。
+set(BIN_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/生成")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${BIN_OUTPUT_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE "${BIN_OUTPUT_DIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${BIN_OUTPUT_DIR}")
 
-#宏定义
-set(SDL_ARCH "x64")
-
-# 定义 SDL3路径宏
-set(SDL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../SDL3")
-
-# 定义 CEF路径宏
-set(CEF_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../CEF")
-
-# 规范化路径转为绝对路径
-get_filename_component(SDL_DIR "${SDL_DIR}" ABSOLUTE)
+# 父工程只负责定义三方路径，供子目录复用。
+set(SDL3_ROOT "${CMAKE_SOURCE_DIR}/../SDL3" CACHE PATH "SDL3路径")
+set(CEF_ROOT "${CMAKE_SOURCE_DIR}/../CEF" CACHE PATH "CEF路径")
+get_filename_component(SDL3_ROOT "${SDL3_ROOT}" ABSOLUTE)
 get_filename_component(CEF_ROOT "${CEF_ROOT}" ABSOLUTE)
 
-# 设置CEF模块路径
-set(CMAKE_MODULE_PATH  ${CMAKE_MODULE_PATH} "${CEF_ROOT}/cmake")
+if(NOT EXISTS "${SDL3_ROOT}/include/SDL3/SDL.h")
+    message(FATAL_ERROR "未找到SDL3头文件: ${SDL3_ROOT}/include/SDL3/SDL.h")
+endif()
+if(NOT EXISTS "${CEF_ROOT}/include/cef_app.h")
+    message(FATAL_ERROR "未找到CEF头文件: ${CEF_ROOT}/include/cef_app.h")
+endif()
 
-# 加载 CEF 包
-find_package(CEF REQUIRED)
+add_subdirectory(CEF)
+add_subdirectory(浏览器)
 
-# 设置输出目录
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG   "${CMAKE_SOURCE_DIR}/生成/Debug")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/生成/Release")
+# 父工程启动项：可执行文件。运行后启动子浏览器的 浏览器.exe
+add_executable(run_browser run_browser.cpp)
+add_dependencies(run_browser CEF SDL)
 
-#批量匹配所有 .cpp
-file(GLOB ALL_SRC "*.cpp")
-# 添加可执行文件
-add_executable(${PROJECT_NAME} ${ALL_SRC})
-
-# 设置可执行文件名称
-set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "浏览器")
-
-# 链接静态库目录
-target_link_directories(${PROJECT_NAME} PRIVATE
-    "${SDL_DIR}/lib/${SDL_ARCH}"
-    "${CEF_ROOT}/Release"
-    "${CEF_ROOT}/out/build/x64-Release/libcef_dll_wrapper"
-)
-
-# 链接静态库
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    SDL3.lib
-    SDL3_test.lib
-    opengl32.lib
-    libcef.lib
-    libcef_dll_wrapper.lib
-)
-
-# 包含头文件目录
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${SDL_DIR}/include
-    ${CEF_ROOT}
-)
-
-# 需要拷贝的文件列表
-set(COPY_WS
-    "${SDL_DIR}/lib/${SDL_ARCH}/SDL3.dll" 
-    "${CEF_ROOT}/Release/chrome_elf.dll"
-    "${CEF_ROOT}/Release/d3dcompiler_47.dll"
-    "${CEF_ROOT}/Release/dxcompiler.dll"
-    "${CEF_ROOT}/Release/dxil.dll"
-    "${CEF_ROOT}/Release/libcef.dll"
-    "${CEF_ROOT}/Release/libEGL.dll"
-    "${CEF_ROOT}/Release/libGLESv2.dll"
-    "${CEF_ROOT}/Release/v8_context_snapshot.bin"
-    "${CEF_ROOT}/Release/vk_swiftshader.dll"
-    "${CEF_ROOT}/Release/vk_swiftshader_icd.json"
-    "${CEF_ROOT}/Release/vulkan-1.dll"
-)
-
-# 拷贝文件到输出目录
-foreach(W_FILE ${COPY_WS})
-    if(EXISTS "${W_FILE}")
-        add_custom_command(
-            TARGET ${PROJECT_NAME}
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${W_FILE}"
-                "$<TARGET_FILE_DIR:${PROJECT_NAME}>"
-            COMMENT "📄 复制文件: ${W_FILE}"
-        )
-        message(STATUS "✅ 已注册文件复制: ${W_FILE}")
-    else()
-        message(WARNING "❌ 文件不存在，跳过复制：${W_FILE}")
-    endif()
-endforeach()
-
-# 要拷贝的目录列表                                                                                                                                                            
-set(COPY_DS                                                                                                                                                                   
-    "${CEF_ROOT}/Resources"                                                                                                                                                   
-)                                                                                                                                                                             
-                                                                                                                                                                                
-# 拷贝 Resources 目录内容到 exe 同级目录                                                                                                                                      
-foreach(D_FILE ${COPY_DS})                                                                                                                                                    
-    if(IS_DIRECTORY "${D_FILE}")                                                                                                                                              
-        add_custom_command(                                                                                                                                                   
-            TARGET ${PROJECT_NAME}                                                                                                                                            
-            POST_BUILD                                                                                                                                                        
-            COMMAND ${CMAKE_COMMAND} -E copy_directory                                                                                                                        
-                "${D_FILE}"                                                                                                                                                   
-                "$<TARGET_FILE_DIR:${PROJECT_NAME}>"                                                                                                                          
-            COMMENT "复制目录内容: ${D_FILE} -> $<TARGET_FILE_DIR:${PROJECT_NAME}>"                                                                                           
-        )                                                                                                                                                                     
-        message(STATUS "已注册目录复制: ${D_FILE} -> $<TARGET_FILE_DIR:${PROJECT_NAME}>")                                                                                     
-    else()                                                                                                                                                                    
-        message(WARNING "目录不存在，跳过复制: ${D_FILE}")                                                                                                                    
-    endif()                                                                                                                                                                   
-endforeach()            
+if(CMAKE_GENERATOR MATCHES "Visual Studio")
+    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT run_browser)
+endif()

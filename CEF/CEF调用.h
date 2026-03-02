@@ -47,6 +47,7 @@ public:
 	/// <returns></returns>
 	bool IsClosing() const { return is_closing_; }
 	static int 运行(int argc, char* argv[], void* sandbox_info);
+	inline static bool IsRun = false;
 private:
 	/// <summary>
 	/// 跟踪所有打开的浏览器窗口
