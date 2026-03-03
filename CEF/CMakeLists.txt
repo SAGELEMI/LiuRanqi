@@ -1,63 +1,22 @@
-list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
+# REQUIRED：找不到会直接终止配置，避免后续半配置状态。
 find_package(CEF REQUIRED)
 
+# 收集 CEF 子目录下所有 .cpp（新增文件后会自动触发重新配置）。
 file(GLOB CEF_SRC CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
 )
 
+# 定义 CEF 可执行目标。
 add_executable(CEF ${CEF_SRC})
+# 生成文件名固定为 CEF.exe（避免受 target 名变化影响）。
 set_target_properties(CEF PROPERTIES OUTPUT_NAME "CEF")
-
+# 加入当前源码目录与父工程统一 include 目录（common + CEF include）。
 target_include_directories(CEF PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CEF_ROOT}"
+    ${PROJECT_SHARED_INCLUDE_DIRS}
 )
-target_link_libraries(CEF PRIVATE
-    "${CEF_ROOT}/Release/libcef.lib"
-    "${CEF_ROOT}/out/build/x64-Release/libcef_dll_wrapper/libcef_dll_wrapper.lib"
-)
+# 使用父工程统一维护的 CEF 链接库集合。
+target_link_libraries(CEF PRIVATE ${PROJECT_LINK_LIBS})
 
-if(MSVC)
-    # 对齐 CEF 预编译库(/MT + 非调试迭代器)。
-    set_property(TARGET CEF PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
-    target_compile_definitions(CEF PRIVATE NDEBUG _ITERATOR_DEBUG_LEVEL=0)
-    target_compile_options(CEF PRIVATE /U_DEBUG)
-endif()
-
-set(CEF_RUNTIME_FILES
-    "${CEF_ROOT}/Release/chrome_elf.dll"
-    "${CEF_ROOT}/Release/d3dcompiler_47.dll"
-    "${CEF_ROOT}/Release/dxcompiler.dll"
-    "${CEF_ROOT}/Release/dxil.dll"
-    "${CEF_ROOT}/Release/libcef.dll"
-    "${CEF_ROOT}/Release/libEGL.dll"
-    "${CEF_ROOT}/Release/libGLESv2.dll"
-    "${CEF_ROOT}/Release/v8_context_snapshot.bin"
-    "${CEF_ROOT}/Release/vk_swiftshader.dll"
-    "${CEF_ROOT}/Release/vk_swiftshader_icd.json"
-    "${CEF_ROOT}/Release/vulkan-1.dll"
-)
-
-foreach(cef_file IN LISTS CEF_RUNTIME_FILES)
-    if(EXISTS "${cef_file}")
-        add_custom_command(
-            TARGET CEF
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${cef_file}"
-                "$<TARGET_FILE_DIR:CEF>"
-            COMMENT "Copy CEF runtime: ${cef_file}"
-        )
-    endif()
-endforeach()
-
-if(IS_DIRECTORY "${CEF_ROOT}/Resources")
-    add_custom_command(
-        TARGET CEF
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CEF_ROOT}/Resources"
-            "$<TARGET_FILE_DIR:CEF>"
-        COMMENT "Copy CEF resources"
-    )
-endif()
+# 统一应用 MSVC 运行时和编译选项（父工程函数）。
+project_apply_msvc_runtime(CEF)
