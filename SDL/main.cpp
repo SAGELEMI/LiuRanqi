@@ -1,5 +1,5 @@
-#include "共享内存协议.h"
-#include "输入事件协议.h"
+#include "ShmemProtocol.h"
+#include "InputProtocol.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>

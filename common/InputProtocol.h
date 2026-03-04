@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-
+// 输入事件协议
 // 输入管道数据的魔数，用于快速校验包合法性
 static constexpr uint32_t kInputMagic = 0x494E5054; // "INPT"
 static constexpr uint32_t kInputVersion = 1;

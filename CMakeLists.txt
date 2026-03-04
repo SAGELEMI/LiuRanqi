@@ -224,7 +224,7 @@ endfunction()
 # 进入 CEF 子目录执行其 CMakeLists.txt（父变量会被子目录读取并复用）。
 add_subdirectory(CEF)
 # 进入 浏览器 子目录执行其 CMakeLists.txt。
-add_subdirectory(浏览器)
+add_subdirectory(SDL)
 
 # 若生成器是 Visual Studio，则把默认启动目标设为 SDL（即 浏览器.exe 对应目标）。
 if(CMAKE_GENERATOR MATCHES "Visual Studio")

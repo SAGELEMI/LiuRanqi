@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-
+//共享内存协议
 // 帧数据魔数：用于快速识别共享内存内容是否为本项目协议
 static constexpr uint32_t kFrameMagic = 0x4345464D; // "CEFM"
 // 协议版本：后续升级协议时可做兼容判断
