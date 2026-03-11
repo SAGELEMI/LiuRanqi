@@ -104,10 +104,60 @@ namespace {
 		MultiByteToWideChar(CP_UTF8, 0, utf8, src_len, out.data(), wlen);
 		return out;
 	}
+
+	// 把 UTF-8 文本安全转成单引号 JS 字符串字面量。
+	std::string EscapeForSingleQuotedJsString(const std::string& text) {
+		std::string escaped;
+		escaped.reserve(text.size() + 16);
+		for (const char ch : text) {
+			switch (ch) {
+			case '\\': escaped += "\\\\"; break;
+			case '\'': escaped += "\\'"; break;
+			case '\r': escaped += "\\r"; break;
+			case '\n': escaped += "\\n"; break;
+			case '\t': escaped += "\\t"; break;
+			default: escaped.push_back(ch); break;
+			}
+		}
+		return escaped;
+	}
+
+	// Renderer 侧暴露给网页的 JS -> C++ 桥接函数。
+	class DemoNativeCallHandler final : public CefV8Handler {
+	public:
+		bool Execute(const CefString& name,
+			CefRefPtr<CefV8Value> object,
+			const CefV8ValueList& arguments,
+			CefRefPtr<CefV8Value>& retval,
+			CefString& exception) override {
+			(void)object;
+			if (name != "nativeCall") {
+				return false;
+			}
+			const std::string payload = !arguments.empty() && arguments[0] && arguments[0]->IsString()
+				? arguments[0]->GetStringValue().ToString()
+				: "JS 未传入文本";
+			CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+			CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+			if (!frame) {
+				exception = "frame is null";
+				return true;
+			}
+			auto message = CefProcessMessage::Create(kMsgJsInvokeNative);
+			message->GetArgumentList()->SetString(0, payload);
+			frame->SendProcessMessage(PID_BROWSER, message);
+			retval = CefV8Value::CreateString("native message sent");
+			return true;
+		}
+
+	private:
+		IMPLEMENT_REFCOUNTING(DemoNativeCallHandler);
+	};
 }
 
 CEFjihe::CEFjihe() = default;
 CEFjihe::~CEFjihe() {
+	CloseBridgeDemoSharedMemory();
 	CloseImeUiSharedMemory();
 	CloseSharedMemory();
 }
@@ -176,11 +226,73 @@ void CEFjihe::CloseImeUiSharedMemory() {
 	ime_shm_size_ = 0;
 }
 
+bool CEFjihe::InitBridgeDemoSharedMemory(const std::wstring& shm_name, size_t total_size) {
+	bridge_demo_shm_handle_ = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, shm_name.c_str());
+	if (!bridge_demo_shm_handle_) {
+		std::wcerr << L"[CEF] BridgeDemo OpenFileMappingW 失败, name=" << shm_name << L", err=" << GetLastError() << std::endl;
+		return false;
+	}
+
+	bridge_demo_shm_view_ = static_cast<uint8_t*>(MapViewOfFile(bridge_demo_shm_handle_, FILE_MAP_ALL_ACCESS, 0, 0, total_size));
+	if (!bridge_demo_shm_view_) {
+		std::wcerr << L"[CEF] BridgeDemo MapViewOfFile 失败, err=" << GetLastError() << std::endl;
+		CloseHandle(bridge_demo_shm_handle_);
+		bridge_demo_shm_handle_ = nullptr;
+		return false;
+	}
+
+	bridge_demo_shm_name_ = shm_name;
+	bridge_demo_shm_size_ = total_size;
+	WriteBridgeDemoStatus("桥接状态已连接，等待页面与按钮交互");
+	return true;
+}
+
+void CEFjihe::CloseBridgeDemoSharedMemory() {
+	if (bridge_demo_shm_view_) {
+		UnmapViewOfFile(bridge_demo_shm_view_);
+		bridge_demo_shm_view_ = nullptr;
+	}
+	if (bridge_demo_shm_handle_) {
+		CloseHandle(bridge_demo_shm_handle_);
+		bridge_demo_shm_handle_ = nullptr;
+	}
+	bridge_demo_shm_size_ = 0;
+}
+
+void CEFjihe::WriteBridgeDemoStatus(const std::string& text) {
+	if (!bridge_demo_shm_view_ || bridge_demo_shm_size_ < sizeof(BridgeDemoState)) {
+		return;
+	}
+	auto* state = reinterpret_cast<BridgeDemoState*>(bridge_demo_shm_view_);
+	state->magic = kBridgeDemoMagic;
+	state->version = kBridgeDemoVersion;
+	std::strncpy(state->status_text, text.c_str(), sizeof(state->status_text) - 1);
+	state->status_text[sizeof(state->status_text) - 1] = '\0';
+	MemoryBarrier();
+	state->seq = ++bridge_demo_seq_;
+}
+
 #pragma region CefApp
 void CEFjihe::OnBeforeCommandLineProcessing(const CefString& process_type,
 	CefRefPtr<CefCommandLine> command_line) {
 	command_line->AppendSwitch("off-screen-rendering-enabled");// 开启离屏渲染（OSR）
 	command_line->AppendSwitch("disable-gpu-compositing");// 禁用 GPU 合成，强制使用软件渲染
+}
+#pragma endregion
+
+#pragma region CefRenderProcessHandler
+void CEFjihe::OnContextCreated(CefRefPtr<CefBrowser> browser,
+	CefRefPtr<CefFrame> frame,
+	CefRefPtr<CefV8Context> context) {
+	(void)browser;
+	(void)frame;
+	CefRefPtr<CefV8Value> global = context ? context->GetGlobal() : nullptr;
+	if (!global) {
+		return;
+	}
+	global->SetValue("nativeCall",
+		CefV8Value::CreateFunction("nativeCall", new DemoNativeCallHandler()),
+		V8_PROPERTY_ATTRIBUTE_NONE);
 }
 #pragma endregion
 
@@ -202,10 +314,33 @@ bool CEFjihe::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
 		return true;
 	}
 
+	// Renderer <- Browser：把 Browser 处理后的结果回调给页面里的 JS。
+	if (source_process == PID_BROWSER && name == kMsgNativeResult) {
+		const std::string native_result = message->GetArgumentList()->GetString(0).ToString();
+		const std::string escaped = EscapeForSingleQuotedJsString(native_result);
+		EvalJsInRenderer(frame, "if (window.onNativeResult) window.onNativeResult('" + escaped + "'); 'native result applied';");
+		return true;
+	}
+
 	// Browser <- Renderer：打印 JS 结果
 	if (source_process == PID_RENDERER && name == kMsgJsResult) {
 		const std::string js_result = message->GetArgumentList()->GetString(0).ToString();
 		std::cout << "[CEF][ProcessMessage] JS结果: " << js_result << std::endl;
+		WriteBridgeDemoStatus("C++ -> JS 成功，JS返回: " + js_result);
+		return true;
+	}
+
+	// Browser <- Renderer：网页里的 JS 主动调用本地 C++。
+	if (source_process == PID_RENDERER && name == kMsgJsInvokeNative) {
+		const std::string js_payload = message->GetArgumentList()->GetString(0).ToString();
+		const std::string native_result = "C++收到JS消息: " + js_payload;
+		std::cout << "[CEF][ProcessMessage] JS调用C++: " << js_payload << std::endl;
+		WriteBridgeDemoStatus("JS -> C++ 成功，收到: " + js_payload);
+		auto result_msg = CefProcessMessage::Create(kMsgNativeResult);
+		result_msg->GetArgumentList()->SetString(0, native_result);
+		if (browser && browser->GetMainFrame()) {
+			browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, result_msg);
+		}
 		return true;
 	}
 
@@ -255,6 +390,7 @@ void CEFjihe::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
 	bool canGoForward) {
 	// Browser -> Renderer：页面加载完成后请求 renderer 执行 JS
 	if (!isLoading && browser && browser->GetMainFrame()) {
+		WriteBridgeDemoStatus("页面加载完成，可以测试 C++ <-> JS 双向通信");
 		auto msg = CefProcessMessage::Create(kMsgEvalJs);
 		msg->GetArgumentList()->SetString(0, "document.title");
 		browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
@@ -513,6 +649,11 @@ void CEFjihe::HandleInputPacketOnUI(const InputEventPacket& pkt) {
 		break;
 
 	case InputEventType::Key: {
+		// OSR + 无原生窗口场景下，F12 可能触发 DevTools 打开路径并导致崩溃。
+		// 这里统一拦截，避免进程异常退出。
+		if (pkt.key_code == VK_F12) {
+			break;
+		}
 		host->SetFocus(true);
 		CefKeyEvent key_event{};
 		key_event.windows_key_code = static_cast<int>(pkt.key_code);
@@ -540,6 +681,25 @@ void CEFjihe::HandleInputPacketOnUI(const InputEventPacket& pkt) {
 		break;
 	}
 
+	case InputEventType::Navigate: {
+		host->SetFocus(true);
+		if (browser->GetMainFrame()) {
+			browser->GetMainFrame()->LoadURL(pkt.text);
+		}
+		break;
+	}
+
+	case InputEventType::ExecuteJs: {
+		host->SetFocus(true);
+		if (browser->GetMainFrame()) {
+			auto message = CefProcessMessage::Create(kMsgEvalJs);
+			message->GetArgumentList()->SetString(0, pkt.text);
+			browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, message);
+			WriteBridgeDemoStatus("已从 SDL 发起 C++ -> JS 调用");
+		}
+		break;
+	}
+
 	case InputEventType::Resize:
 		view_w_ = static_cast<int>(pkt.width);
 		view_h_ = static_cast<int>(pkt.height);
@@ -562,7 +722,12 @@ void CEFjihe::HandleInputPacketOnUI(const InputEventPacket& pkt) {
 }
 #pragma endregion
 
-int CEFjihe::运行(int argc, char* argv[], void* sandbox_info) {
+int CEFjihe::CEFMain(int argc, char* argv[]) {
+	void* sandbox_info = nullptr;
+#if defined(CEF_USE_SANDBOX)
+	CefScopedSandboxInfo scoped_sandbox;
+	sandbox_info = scoped_sandbox.sandbox_info();
+#endif
 #if CEF_API_VERSION != CEF_EXPERIMENTAL
 	std::cout << "使用 CEF API 版本: " << CEF_API_VERSION << std::endl;
 #endif
@@ -584,6 +749,7 @@ int CEFjihe::运行(int argc, char* argv[], void* sandbox_info) {
 	app->startup_url_ = CefString(ReadWStringSwitch(cmd, "url", L"https://www.baidu.com"));
 	app->shm_name_ = ReadWStringSwitch(cmd, "shm-name", L"");
 	app->ime_shm_name_ = ReadWStringSwitch(cmd, "ime-shm-name", L"");
+	app->bridge_demo_shm_name_ = ReadWStringSwitch(cmd, "bridge-demo-shm-name", L"");
 
 	app->input_pipe_name_ = ReadWStringSwitch(cmd, "input-pipe", L"");
 	if (!app->input_pipe_name_.empty()) {
@@ -614,6 +780,12 @@ int CEFjihe::运行(int argc, char* argv[], void* sandbox_info) {
 	else {
 		std::cout << "[CEF] 未收到 --ime-shm-name，IME 候选框位置不会同步到 SDL" << std::endl;
 	}
+	if (!app->bridge_demo_shm_name_.empty()) {
+		app->InitBridgeDemoSharedMemory(app->bridge_demo_shm_name_, sizeof(BridgeDemoState));
+	}
+	else {
+		std::cout << "[CEF] 未收到 --bridge-demo-shm-name，SDL 不会显示 JS 桥接状态" << std::endl;
+	}
 
 	CefWindowInfo window_info;
 	window_info.SetAsWindowless(nullptr); // 必须：OSR 模式
@@ -635,6 +807,7 @@ int CEFjihe::运行(int argc, char* argv[], void* sandbox_info) {
 	CefRunMessageLoop();
 
 	app->StopInputPipeServer();
+	app->CloseBridgeDemoSharedMemory();
 	app->CloseImeUiSharedMemory();
 	app->CloseSharedMemory();
 	CefShutdown();

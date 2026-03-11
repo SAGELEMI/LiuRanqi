@@ -1,22 +1,29 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
-// 输入事件协议
-// 输入管道数据的魔数，用于快速校验包合法性
+// 输入事件协议。
+// 输入管道数据的魔数，用于快速校验包合法性。
 static constexpr uint32_t kInputMagic = 0x494E5054; // "INPT"
 static constexpr uint32_t kInputVersion = 1;
 
-// IME UI 共享状态（CEF -> SDL）
+// IME UI 共享状态（CEF -> SDL）。
 static constexpr uint32_t kImeUiMagic = 0x494D4555; // "IMEU"
 static constexpr uint32_t kImeUiVersion = 1;
 
+// 文本字段固定长度，统一复用于文本输入和导航地址。
+static constexpr size_t kInputTextBytes = 512;
+
+// 输入事件类型枚举。
 enum class InputEventType : uint32_t {
-    MouseMove = 1,   // 鼠标移动
-    MouseButton = 2, // 鼠标按下/抬起
-    MouseWheel = 3,  // 鼠标滚轮
-    Key = 4,         // 键盘按下/抬起
-    Text = 5,        // 文本输入（字符）
-    Resize = 6,      // 视图尺寸变化
-    Focus = 7        // 焦点变化
+    MouseMove = 1,   // 鼠标移动。
+    MouseButton = 2, // 鼠标按下/抬起。
+    MouseWheel = 3,  // 鼠标滚轮。
+    Key = 4,         // 键盘按下/抬起。
+    Text = 5,        // 文本输入（字符）。
+    Resize = 6,      // 视图尺寸变化。
+    Focus = 7,       // 焦点变化。
+    Navigate = 8,    // 导航到新的地址。
+    ExecuteJs = 9    // 让 CEF 执行一段 JS。
 };
 
 enum class MouseButtonType : uint32_t {
@@ -25,7 +32,7 @@ enum class MouseButtonType : uint32_t {
     Right = 3
 };
 
-// 固定长度事件包，便于 ReadFile/WriteFile 一次读写
+// 固定长度事件包，便于 ReadFile/WriteFile 一次读写。
 struct InputEventPacket {
     uint32_t magic = kInputMagic;       // 魔数
     uint32_t version = kInputVersion;   // 协议版本
@@ -49,10 +56,10 @@ struct InputEventPacket {
     uint32_t key_up = 0;                // 1=KEYUP, 0=KEYDOWN
     uint32_t reserved1 = 0;
 
-    uint32_t width = 0;                 // Resize 宽
-    uint32_t height = 0;                // Resize 高
+    uint32_t width = 0;                 // Resize 宽。
+    uint32_t height = 0;                // Resize 高。
 
-    char text[64] = { 0 };                // Text 事件 UTF-8
+    char text[kInputTextBytes] = { 0 }; // Text 或 Navigate 事件使用的 UTF-8 文本。
 };
 
 // CEF 把输入法候选锚点写入该结构；SDL 读取后调用 SDL_SetTextInputArea。

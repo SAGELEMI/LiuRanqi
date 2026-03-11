@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CEF JS Bridge Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --panel: #182235;
+      --panel-2: #22304a;
+      --accent: #38bdf8;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(56, 189, 248, 0.18), transparent 30%),
+        linear-gradient(160deg, #0b1120, var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .panel {
+      width: min(720px, 100%);
+      background: linear-gradient(180deg, rgba(24, 34, 53, 0.96), rgba(14, 22, 37, 0.96));
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+    .card {
+      background: rgba(34, 48, 74, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .label {
+      display: block;
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: var(--muted);
+    }
+    input {
+      width: 100%;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      background: rgba(15, 23, 42, 0.95);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+    }
+    input:focus {
+      border-color: rgba(56, 189, 248, 0.85);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 11px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #06121d;
+      background: linear-gradient(135deg, #67e8f9, var(--accent));
+      cursor: pointer;
+    }
+    button.secondary {
+      color: var(--text);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .result {
+      min-height: 44px;
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      line-height: 1.5;
+    }
+    .meta {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    strong { color: var(--text); }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>CEF JS Bridge Demo</h1>
+    <p>This page is used with the SDL toolbar buttons to demonstrate both directions: JS calling C++, and C++ triggering JS inside CEF.</p>
+    <div class="grid">
+      <section class="card">
+        <label class="label" for="jsMessage">Message sent from JS to C++</label>
+        <input id="jsMessage" value="hello from JavaScript" />
+        <div class="actions">
+          <button id="callNativeButton">JS -> C++</button>
+          <button class="secondary" id="clearButton">Clear</button>
+        </div>
+      </section>
+      <section class="card">
+        <div class="label">Bridge result</div>
+        <div class="result" id="result">Waiting for interaction...</div>
+      </section>
+      <section class="card meta">
+        <div><strong>JS -> C++ count:</strong> <span id="nativeCallCount">0</span></div>
+        <div><strong>C++ -> JS count:</strong> <span id="nativePulseCount">0</span></div>
+        <div><strong>Last C++ -> JS time:</strong> <span id="nativePulseTime">not triggered</span></div>
+      </section>
+    </div>
+  </main>
+  <script>
+    let nativeCallCount = 0;
+    let nativePulseCount = 0;
+
+    function setResult(text) {
+      document.getElementById("result").textContent = text;
+    }
+
+    function updateNativeCount() {
+      document.getElementById("nativeCallCount").textContent = String(nativeCallCount);
+    }
+
+    function updatePulseCount() {
+      document.getElementById("nativePulseCount").textContent = String(nativePulseCount);
+    }
+
+    window.onNativeResult = function(message) {
+      setResult(message);
+    };
+
+    window.onNativePulse = function() {
+      nativePulseCount += 1;
+      updatePulseCount();
+      document.getElementById("nativePulseTime").textContent = new Date().toLocaleTimeString();
+      setResult("C++ triggered JS successfully.");
+      return "pulse-count=" + nativePulseCount;
+    };
+
+    document.getElementById("callNativeButton").addEventListener("click", function() {
+      const text = document.getElementById("jsMessage").value.trim() || "empty message";
+      nativeCallCount += 1;
+      updateNativeCount();
+      if (typeof window.nativeCall === "function") {
+        setResult("JS sent a message to C++...");
+        window.nativeCall(text);
+      } else {
+        setResult("window.nativeCall is not available.");
+      }
+    });
+
+    document.getElementById("clearButton").addEventListener("click", function() {
+      setResult("Waiting for interaction...");
+    });
+  </script>
+</body>
+</html>

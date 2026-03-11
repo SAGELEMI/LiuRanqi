@@ -14,6 +14,13 @@ static constexpr uint32_t kMaxPixelBytes = kMaxWidth * kMaxHeight * 4;
 // ProcessMessage 消息名（只传控制消息，不传大像素）
 static constexpr char kMsgEvalJs[] = "app.eval_js";
 static constexpr char kMsgJsResult[] = "app.js_result";
+static constexpr char kMsgJsInvokeNative[] = "app.js_invoke_native";
+static constexpr char kMsgNativeResult[] = "app.native_result";
+
+// JS 桥接演示状态共享内存（CEF -> SDL）。
+static constexpr uint32_t kBridgeDemoMagic = 0x42444745; // "BDGE"
+static constexpr uint32_t kBridgeDemoVersion = 1;
+static constexpr size_t kBridgeDemoTextBytes = 512;
 
 // 共享内存布局：
 // [SharedFrameHeader][pixel BGRA...]
@@ -26,4 +33,12 @@ struct SharedFrameHeader {
     uint64_t frame_id = 0;             // 帧号：每次写入新帧后递增
     uint32_t pixel_bytes = 0;          // 像素总字节：stride * height
     uint32_t reserved = 0;             // 预留字段（将来扩展）
+};
+
+// CEF 把最近一次 JS 桥接演示状态写到这里，SDL 每帧读取并展示。
+struct BridgeDemoState {
+    uint32_t magic = kBridgeDemoMagic;                           // 协议魔数
+    uint32_t version = kBridgeDemoVersion;                      // 协议版本
+    uint64_t seq = 0;                                           // 每次更新递增
+    char status_text[kBridgeDemoTextBytes] = { 0 };             // UTF-8 状态文本
 };

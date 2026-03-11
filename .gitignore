@@ -1,5 +1,7 @@
 /.spec-workflow
 /.vs
 /out
-/生成
-/静态库
+/lib
+/Release
+/third_party
+/教导

@@ -7,6 +7,7 @@
 #include "include/cef_render_process_handler.h"
 #include "include/cef_load_handler.h"
 #include "include/cef_display_handler.h"
+#include "include/cef_v8.h"
 
 #include "InputProtocol.h"
 #include <thread>
@@ -96,6 +97,12 @@ public:
 	void OnLoadingStateChange(CefRefPtr<CefBrowser> browser,bool isLoading,bool canGoBack,bool canGoForward) override;
 #pragma endregion
 
+#pragma region CefRenderProcessHandler
+	void OnContextCreated(CefRefPtr<CefBrowser> browser,
+		CefRefPtr<CefFrame> frame,
+		CefRefPtr<CefV8Context> context) override;
+#pragma endregion
+
 #pragma region CefDisplayHandler
 	bool OnCursorChange(CefRefPtr<CefBrowser> browser,
 		CefCursorHandle cursor,
@@ -133,10 +140,11 @@ public:
 #pragma region 输入
 	bool StartInputPipeServer(const std::wstring& pipe_name);
 	void StopInputPipeServer();
+	// 在UI上处理输入数据包
 	void HandleInputPacketOnUI(const InputEventPacket& pkt);
 #pragma endregion
 
-	static int 运行(int argc, char* argv[], void* sandbox_info);
+	static int CEFMain(int argc, char* argv[]);
 
 private:
 	/// <summary>
@@ -152,6 +160,9 @@ private:
 	void CloseSharedMemory();
 	bool InitImeUiSharedMemory(const std::wstring& shm_name, size_t total_size);
 	void CloseImeUiSharedMemory();
+	bool InitBridgeDemoSharedMemory(const std::wstring& shm_name, size_t total_size);
+	void CloseBridgeDemoSharedMemory();
+	void WriteBridgeDemoStatus(const std::string& text);
 #pragma region 输入
 	void InputPipeLoop();
 	static CefBrowserHost::MouseButtonType ToCefMouseButton(uint32_t btn);
@@ -181,6 +192,13 @@ private:
 	uint8_t* ime_shm_view_ = nullptr;
 	size_t ime_shm_size_ = 0;
 	uint64_t ime_seq_ = 0;
+
+	// JS 桥接演示状态共享内存（CEF -> SDL）
+	std::wstring bridge_demo_shm_name_;
+	HANDLE bridge_demo_shm_handle_ = nullptr;
+	uint8_t* bridge_demo_shm_view_ = nullptr;
+	size_t bridge_demo_shm_size_ = 0;
+	uint64_t bridge_demo_seq_ = 0;
 
 #pragma region 输入
 	std::wstring input_pipe_name_;
