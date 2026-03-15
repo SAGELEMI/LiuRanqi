@@ -2,9 +2,9 @@
 #include <cstddef>
 #include <cstdint>
 // 输入事件协议。
-// 输入管道数据的魔数，用于快速校验包合法性。
+// 输入管道数据的标识号，用于快速校验包合法性。
 static constexpr uint32_t kInputMagic = 0x494E5054; // "INPT"
-static constexpr uint32_t kInputVersion = 1;
+static constexpr uint32_t kInputVersion = 2;
 
 // IME UI 共享状态（CEF -> SDL）。
 static constexpr uint32_t kImeUiMagic = 0x494D4555; // "IMEU"
@@ -23,7 +23,8 @@ enum class InputEventType : uint32_t {
     Resize = 6,      // 视图尺寸变化。
     Focus = 7,       // 焦点变化。
     Navigate = 8,    // 导航到新的地址。
-    ExecuteJs = 9    // 让 CEF 执行一段 JS。
+    ExecuteJs = 9,   // 让 CEF 执行一段 JS。
+    Composition = 10 // 输入法组合串变化。
 };
 
 enum class MouseButtonType : uint32_t {
@@ -34,7 +35,7 @@ enum class MouseButtonType : uint32_t {
 
 // 固定长度事件包，便于 ReadFile/WriteFile 一次读写。
 struct InputEventPacket {
-    uint32_t magic = kInputMagic;       // 魔数
+    uint32_t magic = kInputMagic;       // 标识号
     uint32_t version = kInputVersion;   // 协议版本
     uint32_t type = 0;                  // InputEventType
     uint32_t reserved0 = 0;
@@ -58,8 +59,10 @@ struct InputEventPacket {
 
     uint32_t width = 0;                 // Resize 宽。
     uint32_t height = 0;                // Resize 高。
+    int32_t composition_start = -1;     // Composition 选区起点。
+    int32_t composition_length = -1;    // Composition 选区长度。
 
-    char text[kInputTextBytes] = { 0 }; // Text 或 Navigate 事件使用的 UTF-8 文本。
+    char text[kInputTextBytes] = { 0 }; // Text / Navigate / ExecuteJs / Composition 使用的 UTF-8 文本。
 };
 
 // CEF 把输入法候选锚点写入该结构；SDL 读取后调用 SDL_SetTextInputArea。

@@ -1,12 +1,15 @@
-# =========================
-# 输出目录统一
-# =========================
-
-# BIN_OUTPUT_DIR：所有目标（exe/lib/dll）统一输出目录，避免分散到各子目录。
+# 把 exe 与 dll 统一输出到工程根目录下的 Release。
 set(BIN_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/Release")
-# CMAKE_RUNTIME_OUTPUT_DIRECTORY：可执行文件（.exe）默认输出目录。
+
+# 把静态库统一输出到工程根目录下的 lib。
+set(LIB_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/lib")
+
+# 先设置所有配置共用的默认输出目录。
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}")
-# CMAKE_LIBRARY_OUTPUT_DIRECTORY：动态库（.dll/.so）默认输出目录。
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${BIN_OUTPUT_DIR}")
-# CMAKE_ARCHIVE_OUTPUT_DIRECTORY：静态库（.lib/.a）默认输出目录。
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/lib")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${LIB_OUTPUT_DIR}")
+
+# 再显式覆盖 Release，避免 VS 多配置生成器额外再拼一个 /Release 子目录。
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${BIN_OUTPUT_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE "${BIN_OUTPUT_DIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${LIB_OUTPUT_DIR}")

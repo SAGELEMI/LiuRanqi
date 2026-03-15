@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 //共享内存协议
-// 帧数据魔数：用于快速识别共享内存内容是否为本项目协议
+// 帧数据标识号：用于快速识别共享内存内容是否为本项目协议
 static constexpr uint32_t kFrameMagic = 0x4345464D; // "CEFM"
 // 协议版本：后续升级协议时可做兼容判断
 static constexpr uint32_t kFrameVersion = 1;
@@ -25,7 +25,7 @@ static constexpr size_t kBridgeDemoTextBytes = 512;
 // 共享内存布局：
 // [SharedFrameHeader][pixel BGRA...]
 struct SharedFrameHeader {
-    uint32_t magic = kFrameMagic;      // 协议魔数
+    uint32_t magic = kFrameMagic;      // 协议标识号
     uint32_t version = kFrameVersion;  // 协议版本
     uint32_t width = 0;                // 当前帧宽
     uint32_t height = 0;               // 当前帧高
@@ -37,7 +37,7 @@ struct SharedFrameHeader {
 
 // CEF 把最近一次 JS 桥接演示状态写到这里，SDL 每帧读取并展示。
 struct BridgeDemoState {
-    uint32_t magic = kBridgeDemoMagic;                           // 协议魔数
+    uint32_t magic = kBridgeDemoMagic;                           // 协议标识号
     uint32_t version = kBridgeDemoVersion;                      // 协议版本
     uint64_t seq = 0;                                           // 每次更新递增
     char status_text[kBridgeDemoTextBytes] = { 0 };             // UTF-8 状态文本
